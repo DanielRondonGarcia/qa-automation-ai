@@ -1,0 +1,5 @@
+{
+  "name": "AI-Powered QA Review Pipeline",
+  "description": "An application to automate C# code quality assurance reviews using AI. It simulates a pipeline for fetching, analyzing, and reporting on code changes from SVN or Git repositories, identifying issues like nomenclature violations and spelling errors, and generating suggested patches.",
+  "requestFramePermissions": []
+}

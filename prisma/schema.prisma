@@ -1,0 +1,142 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modelo para almacenar secretos de sesión (API keys, tokens, etc.)
+model SessionSecret {
+  id          String   @id @default(cuid())
+  type        String   // 'SVN', 'GIT', 'OPENAI_API_KEY', etc.
+  name        String   // Nombre descriptivo del secreto
+  value       String   // Valor encriptado del secreto
+  userId      String?  // ID del usuario (opcional para futuras implementaciones)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  expiresAt   DateTime? // Fecha de expiración opcional
+  isActive    Boolean  @default(true)
+
+  @@map("session_secrets")
+}
+
+// Modelo para almacenar información de proyectos/repositorios
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  repoUrl     String
+  repoType    String   // 'GIT' o 'SVN'
+  branch      String?  // Para Git
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isActive    Boolean  @default(true)
+
+  // Relaciones
+  reviews     Review[]
+
+  @@map("projects")
+}
+
+// Modelo para almacenar reportes de análisis
+model Review {
+  id          String   @id @default(cuid())
+  projectId   String
+  requestId   String   @unique // ID único para cada análisis
+  status      String   // 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED'
+  totalFiles  Int      @default(0)
+  totalIssues Int      @default(0)
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  errorMessage String?
+  
+  // Metadatos del análisis
+  rules       Json?    // Reglas aplicadas en el análisis
+  summary     Json?    // Resumen del análisis
+  
+  // Relaciones
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  findings    Finding[]
+  files       ReviewFile[]
+
+  @@map("reviews")
+}
+
+// Modelo para almacenar archivos analizados
+model ReviewFile {
+  id          String   @id @default(cuid())
+  reviewId    String
+  filePath    String
+  fileName    String
+  fileSize    Int?
+  linesOfCode Int?
+  issueCount  Int      @default(0)
+  status      String   // 'PENDING', 'ANALYZED', 'SKIPPED', 'ERROR'
+  analyzedAt  DateTime?
+  
+  // Relaciones
+  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  findings    Finding[]
+
+  @@map("review_files")
+}
+
+// Modelo para almacenar hallazgos/issues encontrados
+model Finding {
+  id          String   @id @default(cuid())
+  reviewId    String
+  fileId      String
+  type        String   // Tipo de issue (ej: 'Spanish Spelling', 'Code Quality', etc.)
+  severity    String   // 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
+  title       String
+  description String
+  line        Int?     // Línea donde se encontró el issue
+  column      Int?     // Columna donde se encontró el issue
+  code        String?  // Código problemático
+  suggestion  String?  // Sugerencia de corrección
+  rule        String?  // Regla que detectó el issue
+  
+  // Metadatos adicionales
+  metadata    Json?    // Información adicional del hallazgo
+  
+  createdAt   DateTime @default(now())
+  
+  // Relaciones
+  review      Review     @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  file        ReviewFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@map("findings")
+}
+
+// Modelo para almacenar configuraciones del sistema
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_config")
+}
+
+// Modelo para auditoría y logs
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String   // 'CREATE', 'UPDATE', 'DELETE', 'ANALYZE', etc.
+  entityType  String   // 'PROJECT', 'REVIEW', 'SECRET', etc.
+  entityId    String?  // ID de la entidad afectada
+  userId      String?  // ID del usuario (para futuras implementaciones)
+  details     Json?    // Detalles adicionales de la acción
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@map("audit_logs")
+}
