@@ -177,7 +177,7 @@ const processReview = async (reviewId) => {
             console.log(`[${reviewId}] Cloning ${repo.url} into ${repoPath}`);
             
             let command;
-            if (repo.type === 'GIT') {
+            if (repo.type && repo.type.toUpperCase() === 'GIT') {
                 let cloneUrl = repo.url;
                 
                 // Get secrets from database instead of memory
@@ -200,7 +200,51 @@ const processReview = async (reviewId) => {
                         cloneUrl = `${protocol}${secretToUse.value}@${urlWithoutProtocol}`;
                     }
                 }
-                command = `git clone --branch ${repo.branch} "${cloneUrl}" "${repo.name}"`;
+                // Verify remote branch exists before cloning; fallback if missing
+                let branchToClone = repo.branch;
+                
+                // Function to find available fallback branch
+                const findFallbackBranch = async (cloneUrl, workspacePath) => {
+                    const fallbackOptions = [
+                        process.env.FALLBACK_BRANCH || 'develop',
+                        'develop',
+                        'main', 
+                        'master'
+                    ];
+                    
+                    // Remove duplicates while preserving order
+                    const uniqueFallbacks = [...new Set(fallbackOptions)];
+                    
+                    for (const branch of uniqueFallbacks) {
+                        try {
+                            const { stdout: branchCheck } = await execPromise(`git ls-remote --heads "${cloneUrl}" "${branch}"`, workspacePath);
+                            if (branchCheck && branchCheck.trim()) {
+                                return branch;
+                            }
+                        } catch (e) {
+                            // Continue to next branch option
+                            continue;
+                        }
+                    }
+                    
+                    // If no fallback found, return the first option as last resort
+                    return uniqueFallbacks[0];
+                };
+                
+                try {
+                    const { stdout: headsOut } = await execPromise(`git ls-remote --heads "${cloneUrl}" "${repo.branch}"`, workspacePath);
+                    if (!headsOut || !headsOut.trim()) {
+                        const fallbackBranch = await findFallbackBranch(cloneUrl, workspacePath);
+                        console.warn(`[${reviewId}] Remote branch ${repo.branch} not found in upstream. Falling back to ${fallbackBranch}.`);
+                        branchToClone = fallbackBranch;
+                    }
+                } catch (e) {
+                    const fallbackBranch = await findFallbackBranch(cloneUrl, workspacePath);
+                    console.warn(`[${reviewId}] Unable to verify remote branch ${repo.branch} (reason: ${e.message}). Falling back to ${fallbackBranch}.`);
+                    branchToClone = fallbackBranch;
+                }
+
+                command = `git clone --branch ${branchToClone} "${cloneUrl}" "${repo.name}"`;
             } else { // SVN
                 let svnOptions = '--non-interactive';
                 const svnSecrets = await secretsService.getSecretsByType('SVN');
@@ -216,7 +260,7 @@ const processReview = async (reviewId) => {
             // 6. Get changed files
             job.status = ReviewJobStatus.DIFFING;
             let changedFiles = [];
-            if (repo.type === 'GIT') {
+            if (repo.type && repo.type.toUpperCase() === 'GIT') {
                 console.log(`[${reviewId}] Fetching latest from remote for Git repo ${repo.name}`);
                 await execPromise('git fetch origin', repoPath);
                 
